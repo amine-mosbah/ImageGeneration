@@ -1,22 +1,25 @@
-# 🎨 Local Image Generation App - Stable Diffusion Mini UI
+# 🎨 AI Image Generation App - Stable Diffusion
 
-A local web application for generating images using Stable Diffusion 1.5. Generate images from text prompts or transform existing images with various style presets - all running locally on your machine with no API costs.
+A flexible web application for generating images using Stable Diffusion 1.5. Generate images from text prompts or transform existing images with various style presets. **Supports both local generation (GPU/CPU) and free cloud API mode.**
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
+![Modes](https://img.shields.io/badge/modes-local%20%7C%20cloud-green.svg)
 
 ## ✨ Features
 
-- **Text-to-Image Generation**: Create images from descriptive text prompts
-- **Image-to-Image Transformation**: Transform existing images using prompts
-- **10 Style Presets**: Realistic Photography, Anime, 3D Render, Oil Painting, Watercolor, Cyberpunk, Fantasy Art, Pixel Art, Comic Book
+- **Hybrid Generation**: Choose between local (GPU/CPU) or cloud API (free) generation
+- **Text-to-Image**: Create images from descriptive text prompts
+- **Image-to-Image**: Transform existing images using prompts
+- **10 Style Presets**: Realistic, Anime, 3D Render, Oil Painting, Watercolor, Cyberpunk, Fantasy, Pixel Art, Comic Book, Sketch
 - **Full Control**: Adjust steps, guidance scale, resolution, strength, and seed
-- **History Management**: Automatic saving with metadata, view recent generations
-- **GPU & CPU Support**: Automatic device detection with optimizations
-- **Local & Private**: Everything runs on your machine, no cloud APIs
+- **History Management**: Automatic saving with metadata and generation history
+- **Flexible Deployment**: Works on any computer (API mode) or local GPU/CPU
+- **100% Free**: No paid APIs required
 
 ## 📋 Table of Contents
 
+- [Generation Modes](#generation-modes)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Usage](#usage)
@@ -26,6 +29,26 @@ A local web application for generating images using Stable Diffusion 1.5. Genera
 - [Troubleshooting](#troubleshooting)
 - [Future Enhancements](#future-enhancements)
 - [License](#license)
+
+## 🔄 Generation Modes
+
+This app supports two generation modes:
+
+### 💻 Local Mode (Default)
+
+- Runs Stable Diffusion on your GPU/CPU
+- **Pros**: Unlimited generations, complete privacy, works offline
+- **Cons**: Requires GPU for speed (or patience with CPU), 3.4GB model download
+- **Best for**: Users with GPU, unlimited use, privacy-conscious users
+
+### ☁️ API Mode (Free Cloud)
+
+- Uses HuggingFace Inference API (free tier)
+- **Pros**: No GPU needed, 10-30 sec generation, works on any computer
+- **Cons**: Requires internet, ~1000 requests/day limit
+- **Best for**: CPU-only users, testing, cheap VPS deployment
+
+**See [API_SETUP.md](API_SETUP.md) for instructions on enabling API mode.**
 
 ## 🔧 Requirements
 

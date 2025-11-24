@@ -3,7 +3,8 @@ diffusers
 transformers
 accelerate
 safetensors
-gradio
+gradio==4.36.1
 Pillow
 numpy
 python-dotenv
+huggingface_hub>=0.20.0

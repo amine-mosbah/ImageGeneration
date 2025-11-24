@@ -28,23 +28,24 @@ from config import (
     MAX_WIDTH,
     OUTPUT_DIR
 )
-from core.styles import list_styles, get_style_description
+from core.styles import list_styles, get_style_description, apply_style
 from core.generation import generate_text2img, generate_img2img
 from core.history import save_image, list_recent_images, get_image_count
 from utils.system_utils import generate_random_seed
+from api.huggingface import HuggingFaceAPI
 
 
-def create_text2img_interface(pipelines: Dict) -> gr.Interface:
+def create_text2img_interface(pipelines: Dict):
     """
     Create the text-to-image generation interface.
+    Supports both local and API modes with dynamic switching.
     
     Args:
-        pipelines: Dictionary containing loaded SD pipelines
+        pipelines: Dictionary containing loaded SD pipelines or API client
         
     Returns:
-        gr.Interface: Gradio interface for text-to-image
+        Function for text-to-image generation
     """
-    pipe = pipelines["text2img"]
     device = pipelines["device"]
     
     def generate_wrapper(
@@ -55,33 +56,71 @@ def create_text2img_interface(pipelines: Dict) -> gr.Interface:
         height: int,
         width: int,
         seed: int,
-        use_random_seed: bool
-    ) -> Tuple[Image.Image, str, list]:
+        use_random_seed: bool,
+        use_api: bool
+    ) -> Tuple[Image.Image, str]:
         """Wrapper function for text-to-image generation with UI feedback."""
         try:
             # Handle random seed
             if use_random_seed:
                 seed = generate_random_seed()
             
-            # Generate image
-            image, metadata = generate_text2img(
-                pipe=pipe,
-                prompt=prompt,
-                style=style,
-                num_inference_steps=steps,
-                guidance_scale=guidance,
-                height=height,
-                width=width,
-                seed=seed,
-                device=device
-            )
+            # Apply style to prompt
+            styled_prompt = apply_style(prompt, style)
+            
+            # Determine mode based on toggle
+            current_mode = "api" if use_api else "local"
+            
+            if current_mode == "api":
+                # Use Hugging Face API
+                api_client = pipelines["api_client"]
+                image = api_client.generate_text2img(
+                    prompt=styled_prompt,
+                    num_inference_steps=steps,
+                    guidance_scale=guidance,
+                    width=width,
+                    height=height,
+                    seed=seed
+                )
+                
+                if image is None:
+                    return None, "❌ API request failed. Check your token or try again."
+                
+                # Create metadata
+                metadata = {
+                    "prompt": prompt,
+                    "styled_prompt": styled_prompt,
+                    "style": style,
+                    "steps": steps,
+                    "guidance_scale": guidance,
+                    "width": image.size[0],
+                    "height": image.size[1],
+                    "seed": seed,
+                    "mode": "api",
+                    "generation_type": "text2img"
+                }
+            else:
+                # Use local pipeline
+                pipe = pipelines["text2img"]
+                image, metadata = generate_text2img(
+                    pipe=pipe,
+                    prompt=prompt,
+                    style=style,
+                    num_inference_steps=steps,
+                    guidance_scale=guidance,
+                    height=height,
+                    width=width,
+                    seed=seed,
+                    device=device
+                )
             
             # Save image
             filepath = save_image(image, metadata, OUTPUT_DIR)
             
             # Prepare info text
+            mode_indicator = "☁️ API" if current_mode == "api" else "💻 Local"
             info = f"""
-**Generation Complete!**
+**Generation Complete!** ({mode_indicator})
 - **Prompt:** {prompt}
 - **Style:** {style}
 - **Size:** {metadata['width']}x{metadata['height']}
@@ -91,29 +130,26 @@ def create_text2img_interface(pipelines: Dict) -> gr.Interface:
 - **Saved to:** {filepath}
             """
             
-            # Get recent images for gallery
-            recent_images = list_recent_images(OUTPUT_DIR, limit=6)
-            
-            return image, info.strip(), recent_images
+            return image, info.strip()
             
         except Exception as e:
             error_msg = f"❌ **Error:** {str(e)}"
-            return None, error_msg, []
+            return None, error_msg
     
     return generate_wrapper
 
 
-def create_img2img_interface(pipelines: Dict) -> gr.Interface:
+def create_img2img_interface(pipelines: Dict):
     """
     Create the image-to-image transformation interface.
+    Supports both local and API modes with dynamic switching.
     
     Args:
         pipelines: Dictionary containing loaded SD pipelines
         
     Returns:
-        gr.Interface: Gradio interface for image-to-image
+        Function for image-to-image transformation
     """
-    pipe = pipelines["img2img"]
     device = pipelines["device"]
     
     def transform_wrapper(
@@ -124,7 +160,8 @@ def create_img2img_interface(pipelines: Dict) -> gr.Interface:
         steps: int,
         guidance: float,
         seed: int,
-        use_random_seed: bool
+        use_random_seed: bool,
+        use_api: bool
     ) -> Tuple[Optional[Image.Image], str]:
         """Wrapper function for image-to-image transformation with UI feedback."""
         try:
@@ -136,28 +173,64 @@ def create_img2img_interface(pipelines: Dict) -> gr.Interface:
             if use_random_seed:
                 seed = generate_random_seed()
             
-            # Transform image
-            image, metadata = generate_img2img(
-                pipe=pipe,
-                prompt=prompt,
-                init_image=input_image,
-                strength=strength,
-                style=style,
-                num_inference_steps=steps,
-                guidance_scale=guidance,
-                seed=seed,
-                device=device
-            )
+            # Apply style
+            styled_prompt = apply_style(prompt, style)
+            
+            # Determine mode based on toggle
+            current_mode = "api" if use_api else "local"
+            
+            if current_mode == "api":
+                # Use Hugging Face API (note: basic API may not support img2img)
+                api_client = pipelines["api_client"]
+                image = api_client.generate_img2img(
+                    prompt=styled_prompt,
+                    init_image=input_image,
+                    strength=strength,
+                    num_inference_steps=steps,
+                    guidance_scale=guidance,
+                    seed=seed
+                )
+                
+                if image is None:
+                    return None, "❌ API request failed or img2img not supported by API"
+                
+                # Create metadata
+                metadata = {
+                    "prompt": prompt,
+                    "styled_prompt": styled_prompt,
+                    "style": style,
+                    "strength": strength,
+                    "steps": steps,
+                    "guidance_scale": guidance,
+                    "seed": seed,
+                    "mode": "api",
+                    "generation_type": "img2img"
+                }
+            else:
+                # Use local pipeline
+                pipe = pipelines["img2img"]
+                image, metadata = generate_img2img(
+                    pipe=pipe,
+                    prompt=prompt,
+                    init_image=input_image,
+                    strength=strength,
+                    style=style,
+                    num_inference_steps=steps,
+                    guidance_scale=guidance,
+                    seed=seed,
+                    device=device
+                )
             
             # Save image
             filepath = save_image(image, metadata, OUTPUT_DIR)
             
             # Prepare info text
+            mode_indicator = "☁️ API" if current_mode == "api" else "💻 Local"
             info = f"""
-**Transformation Complete!**
+**Transformation Complete!** ({mode_indicator})
 - **Prompt:** {prompt}
 - **Style:** {style}
-- **Strength:** {metadata['strength']}
+- **Strength:** {metadata.get('strength', strength)}
 - **Steps:** {metadata['steps']}
 - **Guidance Scale:** {metadata['guidance_scale']}
 - **Seed:** {metadata['seed']}
@@ -183,33 +256,106 @@ def create_app(pipelines: Dict) -> gr.Blocks:
     Returns:
         gr.Blocks: Complete Gradio application
     """
-    # Get available styles
+    # Get mode and available styles
+    mode = pipelines.get("mode", "local")
     styles = list_styles()
     
     # Create generation functions
     text2img_fn = create_text2img_interface(pipelines)
     img2img_fn = create_img2img_interface(pipelines)
     
+    # Custom CSS for premium look
+    custom_css = """
+    .gradio-container {
+        font-family: 'Inter', sans-serif !important;
+    }
+    
+    .app-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 2rem;
+        border-radius: 12px;
+        margin-bottom: 2rem;
+        box-shadow: 0 8px 32px rgba(102, 126, 234, 0.25);
+    }
+    
+    .app-header h1 {
+        color: white !important;
+        font-size: 2.5rem !important;
+        font-weight: 700 !important;
+        margin-bottom: 0.5rem !important;
+    }
+    
+    .app-header p {
+        color: rgba(255, 255, 255, 0.9) !important;
+        font-size: 1.1rem !important;
+    }
+    
+    .mode-toggle {
+        background: rgba(255, 255, 255, 0.15);
+        backdrop-filter: blur(10px);
+        border-radius: 50px;
+        padding: 0.5rem 1.5rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-top: 1rem;
+    }
+    
+    .stats-badge {
+        background: rgba(255, 255, 255, 0.2);
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        color: white;
+        font-weight: 600;
+    }
+    
+    .generate-btn {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        border: none !important;
+        font-weight: 600 !important;
+        font-size: 1.1rem !important;
+        padding: 1rem 2rem !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    .generate-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4) !important;
+    }
+    """
+    
     # Build the UI
-    with gr.Blocks(title=APP_TITLE, theme=gr.themes.Soft()) as app:
-        gr.Markdown(f"# {APP_TITLE}")
-        gr.Markdown(APP_DESCRIPTION)
+    with gr.Blocks(title=APP_TITLE, theme=gr.themes.Soft(), css=custom_css) as app:
+        # Premium Header
+        with gr.Row(elem_classes="app-header"):
+            with gr.Column():
+                gr.Markdown("# 🎨 AI Image Generation Studio")
+                gr.Markdown("Powered by Stable Diffusion & FLUX • Professional Quality • Lightning Fast")
+                
+                with gr.Row():
+                    # Mode toggle in header
+                    api_toggle = gr.Checkbox(
+                        label="☁️ Use Cloud API (Fast & Free)",
+                        value=(mode == "api"),
+                        interactive=True,
+                        elem_classes="mode-toggle"
+                    )
+                    
+                    # Stats
+                    image_count = get_image_count(OUTPUT_DIR)
+                    gr.Markdown(f'<span class="stats-badge">📸 {image_count} images generated</span>')
         
-        # Show image count
-        image_count = get_image_count(OUTPUT_DIR)
-        gr.Markdown(f"*Generated images: {image_count}*")
-        
-        with gr.Tabs():
+        with gr.Tabs() as tabs:
             # ========== TEXT TO IMAGE TAB ==========
             with gr.Tab("📝 Text → Image"):
-                gr.Markdown("Generate images from text prompts")
+                gr.Markdown("### Generate stunning images from your imagination")
                 
                 with gr.Row():
                     with gr.Column(scale=1):
                         txt_prompt = gr.Textbox(
-                            label="Prompt",
-                            placeholder="Describe the image you want to generate...",
-                            lines=3
+                            label="✨ Your Prompt",
+                            placeholder="A majestic dragon soaring through storm clouds, cinematic lighting, highly detailed...",
+                            lines=4
                         )
                         
                         txt_style = gr.Dropdown(
@@ -274,17 +420,8 @@ def create_app(pipelines: Dict) -> gr.Blocks:
                         txt_generate_btn = gr.Button("🎨 Generate Image", variant="primary", size="lg")
                     
                     with gr.Column(scale=1):
-                        txt_output = gr.Image(label="Generated Image", type="pil")
-                        txt_info = gr.Markdown("*Output info will appear here*")
-                
-                # Gallery of recent images
-                with gr.Row():
-                    txt_gallery = gr.Gallery(
-                        label="Recent Generations",
-                        columns=3,
-                        rows=2,
-                        height="auto"
-                    )
+                        txt_output = gr.Image(label="✨ Generated Image", type="pil", height=500)
+                        txt_info = gr.Markdown("*Click generate to create your image*")
                 
                 # Connect the generate button
                 txt_generate_btn.click(
@@ -297,27 +434,28 @@ def create_app(pipelines: Dict) -> gr.Blocks:
                         txt_height,
                         txt_width,
                         txt_seed,
-                        txt_random_seed
+                        txt_random_seed,
+                        api_toggle  # Add API toggle to inputs
                     ],
-                    outputs=[txt_output, txt_info, txt_gallery]
+                    outputs=[txt_output, txt_info]
                 )
             
             # ========== IMAGE TO IMAGE TAB ==========
             with gr.Tab("🖼️ Image → Image"):
-                gr.Markdown("Transform existing images with text prompts")
+                gr.Markdown("### Transform and reimagine your images")
                 
                 with gr.Row():
                     with gr.Column(scale=1):
                         img_input = gr.Image(
-                            label="Input Image",
+                            label="📤 Upload Image",
                             type="pil",
-                            sources=["upload", "clipboard"]
+                            height=400
                         )
                         
                         img_prompt = gr.Textbox(
-                            label="Prompt",
-                            placeholder="Describe how you want to transform the image...",
-                            lines=3
+                            label="✨ Transformation Prompt",
+                            placeholder="Transform into a watercolor painting, add magical atmosphere...",
+                            lines=4
                         )
                         
                         img_style = gr.Dropdown(
@@ -370,8 +508,8 @@ def create_app(pipelines: Dict) -> gr.Blocks:
                         img_generate_btn = gr.Button("🎨 Transform Image", variant="primary", size="lg")
                     
                     with gr.Column(scale=1):
-                        img_output = gr.Image(label="Transformed Image", type="pil")
-                        img_info = gr.Markdown("*Output info will appear here*")
+                        img_output = gr.Image(label="✨ Transformed Image", type="pil", height=500)
+                        img_info = gr.Markdown("*Upload an image and click transform*")
                 
                 # Connect the transform button
                 img_generate_btn.click(
@@ -384,23 +522,38 @@ def create_app(pipelines: Dict) -> gr.Blocks:
                         img_steps,
                         img_guidance,
                         img_seed,
-                        img_random_seed
+                        img_random_seed,
+                        api_toggle  # Add API toggle to inputs
                     ],
                     outputs=[img_output, img_info]
                 )
         
-        # Footer
+        # Premium Footer
         gr.Markdown("""
 ---
-### 💡 Tips
-- **Text → Image**: Start with simple prompts and adjust style/parameters
-- **Image → Image**: Lower strength values preserve more of the original image
-- **Quality**: More steps = better quality but slower generation
-- **Memory**: If you run out of VRAM, reduce resolution or close other GPU applications
-- **Seeds**: Use the same seed to recreate similar images
+### 💡 Pro Tips
+        
+**🎨 Crafting Better Prompts:**
+- Be specific and descriptive (lighting, mood, style, details)
+- Use artistic terms: "cinematic lighting", "highly detailed", "8k resolution"
+- Combine styles: "oil painting in the style of Van Gogh"
 
-### 📁 Output
-All generated images are saved to: `outputs/generated/`
+**⚡ Mode Selection:**
+- **☁️ Cloud API**: Fast generation (10-30s), no GPU needed, ~1000 free/day
+- **💻 Local**: Unlimited use, requires GPU for speed, complete privacy
+
+**🎯 Parameters Guide:**
+- **Steps**: 20-30 for speed, 50+ for maximum quality
+- **Guidance**: 7-8 for balanced, 10+ for strict prompt following
+- **Strength** (img2img): 0.3-0.5 for subtle changes, 0.7-0.9 for major transformation
+
+**🔐 Privacy & Storage:**
+All images saved to `outputs/generated/` • Toggle API mode anytime • Your prompts stay private in local mode
+
+---
+<div style="text-align: center; color: #888; padding: 1rem;">
+    Made with ❤️ using Stable Diffusion & FLUX • Powered by HuggingFace
+</div>
         """)
     
     return app
